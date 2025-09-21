@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐭 Teach the mouse - Reinforcement Learning</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 30px;
+            padding: 20px;
+            background-color: #f0f2f5;
+            overflow-x: hidden;
+            color: #333;
+        }
+        #main-container {
+            display: flex;
+            gap: 30px;
+            align-items: flex-start;
+            flex-direction: row-reverse;
+            max-width: 1400px;
+        }
+        #canvas-container {
+            border: 3px solid #333;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            background: white;
+        }
+        #ui-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 320px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        #left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 320px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h2, h3 {
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 5px;
+            margin-top: 0;
+        }
+        button, select, input[type=range] {
+            padding: 10px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button { 
+            background-color: #007bff; 
+            color: white; 
+        }
+        button:hover { 
+            background-color: #0056b3; 
+        }
+        select { 
+            background-color: #f8f9fa; 
+            color: #333; 
+            border: 1px solid #ccc; 
+        }
+        input[type=range] { 
+            width: 100%; 
+        }
+        p { 
+            margin: 5px 0; 
+            color: #555; 
+        }
+        #nn-visualizer {
+            background-color: #282c34;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .hidden { 
+            display: none; 
+        }
+        #design-mode-controls { 
+            display: flex; 
+            gap: 10px; 
+        }
+        #create-wall-btn.active { 
+            background-color: #28a745; 
+        }
+        #erase-wall-btn.active { 
+            background-color: #dc3545; 
+        }
+        .info-box {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .metric-value {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .reward-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 5px 0;
+        }
+        .reward-bar {
+            height: 10px;
+            background: linear-gradient(90deg, red, yellow, green);
+            border-radius: 5px;
+            flex-grow: 1;
+        }
+        .reward-marker {
+            width: 4px;
+            height: 15px;
+            background: #333;
+            position: relative;
+            margin-left: 0;
+        }
+        .action-label {
+            display: inline-block;
+            width: 100px;
+            font-weight: bold;
+        }
+        .tutorial-content {
+            display: none;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 4px solid #007bff;
+        }
+        .tutorial-btn {
+            background: #6c757d;
+            font-size: 14px;
+            padding: 5px 10px;
+        }
+        .memory-info {
+            background-color: #e8f5e8;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 4px solid #28a745;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="main-container">
+        <div id="canvas-container"></div>
+        <div id="ui-container">
+            <h2>Control Panel</h2>
+            <div class="section">
+                <button id="start-btn">Start</button>
+                <button id="pause-btn">Pause</button>
+                <button id="reset-btn">Reset Agent</button>
+            </div>
+            
+            <div class="section">
+                <button id="design-mode-btn">Design Mode</button>
+                <div id="design-mode-controls" class="hidden">
+                    <button id="create-wall-btn" class="active">Create wall</button>
+                    <button id="erase-wall-btn">Erase wall</button>
+                </div>
+            </div>
+            
+            <div class="section">
+                <label for="control-mode"><strong>Control Mode:</strong></label>
+                <select id="control-mode">
+                    <option value="neural">🧠 Neural</option>
+                    <option value="random">🎲 Random</option>
+                    <option value="q-learning">📊 Q-Learning</option>
+                </select>
+            </div>
+            
+            <div class="section">
+                <h3>Learning Parameters</h3>
+                <p>Epsilon (exploration): <span id="epsilon-value" class="metric-value">1.0</span></p>
+                <p>Learning Rate: <span id="lr-value" class="metric-value">0.01</span></p>
+                <p>Discount factor: <span id="gamma-value" class="metric-value">0.99</span></p>
+                
+                <div class="memory-info">
+                    <strong>Trajectory Memory</strong>
+                    <p>The agent remembers successful paths and replicates them when possible.</p>
+                    <p>Saved paths: <span id="saved-paths" class="metric-value">0</span></p>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Rewards</h3>
+                <div class="reward-indicator">
+                    <span>-1.0</span>
+                    <div class="reward-bar">
+                        <div class="reward-marker" id="reward-marker"></div>
+                    </div>
+                    <span>10.0</span>
+                </div>
+                <p>Last Reward: <span id="last-reward" class="metric-value">0.0</span></p>
+            </div>
+
+            <div class="section">
+                <h3>Learning Metrics</h3>
+                <p>Steps this episode: <span id="steps-text" class="metric-value">0</span></p>
+                <p>Best time (steps): <span id="best-time-text" class="metric-value">N/A</span></p>
+                <p>Completed Episodes: <span id="episodes-text" class="metric-value">0</span></p>
+                <p>Total steps: <span id="total-steps-text" class="metric-value">0</span></p>
+                <p>Consecutive successes: <span id="success-streak" class="metric-value">0</span></p>
+                <p>Exploration state: <span id="exploration-state" class="metric-value">Alta</span></p>
+                <p>Memory use: <span id="using-memory" class="metric-value">No</span></p>
+            </div>
+        </div>
+        
+        <div id="left-panel">
+            <div class="section">
+                <h3>Explorador Neuronal</h3>
+                <div id="nn-visualizer"></div>
+            </div>
+
+            <div class="section">
+                <canvas id="metrics-chart" width="300" height="180"></canvas>
+            </div>
+            
+            <div class="section">
+                <h3>Agent Actions</h3>
+                <p><span class="action-label">Up (0):</span> <span id="action-0-value" class="metric-value">0.00</span></p>
+                <p><span class="action-label">Down (1):</span> <span id="action-1-value" class="metric-value">0.00</span></p>
+                <p><span class="action-label">Left (2):</span> <span id="action-2-value" class="metric-value">0.00</span></p>
+                <p><span class="action-label">Right (3):</span> <span id="action-3-value" class="metric-value">0.00</span></p>
+            </div>
+            
+            <div class="section">
+                <button class="tutorial-btn" onclick="toggleTutorial()">Short tutorial</button>
+                <div id="tutorial-content" class="tutorial-content">
+                    <h4>Reinforcement Learning Concepts</h4>
+                    <p><strong>Agent:</strong> The mouse learning the correct path to the target.</p>
+                    <p><strong>Actions:</strong> Movements (up, down, left, right).p>
+                    <p><strong>Rewards:</strong> Positive signals.</p>
+                    <p><strong>Q-Values:</strong> Quality of a movement in each episode.</p>
+                    <p><strong>Exploration vs Exploitation:</strong> Balance between exploring new actions and exploiting what is known.
+            </div>
+        </div>
+    </div>
+
+<script>
+// ===================================
+// CONFIGURACIÓN GLOBAL
+// ===================================
+const COLS = 5;
+const ROWS = 5;
+const CELL_SIZE = 50;
+let maze, agent, nnVisualizer;
+let isPaused = true; 
+let controlMode = 'neural';
+let isDrawingMode = false;
+let drawingModeType = 'create';
+
+let startButton, pauseButton, resetButton, modeSelector;
+let designModeButton, createWallButton, eraseWallButton, designModeControls;
+let stepsText, bestTimeText, episodesText, totalStepsText, successStreakText, explorationStateText, usingMemoryText, savedPathsText;
+let leftPanel, uiContainer;
+let episodeSteps = [];
+let bestTime = Infinity;
+let totalSteps = 0;
+let completedEpisodes = 0;
+let successStreak = 0;
+let chart;
+let lastReward = 0;
+let mazeHash = '';
+
+// ===================================
+// P5.JS - SETUP INICIAL
+// ===================================
+function setup() {
+    const canvas = createCanvas(COLS * CELL_SIZE, ROWS * CELL_SIZE);
+    canvas.parent('canvas-container');
+    
+    // Inicializar laberinto
+    maze = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+    
+    for (let i = 1; i < ROWS-1; i++) {
+        if (i % 2 === 0) {
+            for (let j = 1; j < COLS-1; j++) {
+                if (j !== 5) maze[i][j] = 0;
+            }
+        }
+    }
+    
+    maze[ROWS - 1][COLS - 1] = 2;
+    agent = new Agent(0, 0);
+    nnVisualizer = new NNVisualizer(document.getElementById('nn-visualizer'));
+    
+    updateMazeHash();
+    setupUI();
+    noLoop();
+}
+
+// ===================================
+// BUCLE PRINCIPAL
+// ===================================
+function draw() {
+    background(255);
+    drawMaze();
+    agent.draw();
+    if (!isPaused && !isDrawingMode) runSimulationStep();
+}
+
+function runSimulationStep() {
+    tf.tidy(() => {
+        // CORRECCIÓN: Se eliminó la verificación del laberinto en cada paso para evitar reinicios no deseados del epsilon.
+        const state = agent.getStateTensor();
+        const action = agent.chooseAction(state, controlMode === 'random');
+        const { reward, done } = agent.takeAction(action);
+        const nextState = agent.getStateTensor();
+        
+        if (controlMode !== 'random') {
+            agent.learn(state, action, reward, nextState, done);
+        }
+        
+        const qValues = agent.model.predict(state).dataSync();
+        nnVisualizer.update(qValues, action);
+        updateActionValues(qValues);
+        
+        lastReward = reward;
+        document.getElementById('last-reward').textContent = reward.toFixed(2);
+        updateRewardMarker(reward);
+        
+        if (done) {
+            completedEpisodes++;
+            if (reward > 0) {
+                successStreak++;
+                // Guardar trayectoria exitosa
+                agent.saveSuccessfulPath();
+            } else {
+                successStreak = 0;
+            }
+            updateMetrics(agent.steps);
+            agent.reset();
+        }
+        
+        totalSteps++;
+        stepsText.html(agent.steps);
+        episodesText.html(completedEpisodes);
+        totalStepsText.html(totalSteps);
+        successStreakText.html(successStreak);
+        
+        document.getElementById('epsilon-value').textContent = agent.epsilon.toFixed(3);
+        explorationStateText.html(agent.getExplorationState());
+        usingMemoryText.html(agent.usingMemory ? "Sí" : "No");
+        savedPathsText.html(agent.successfulPaths.length);
+    });
+}
+
+function updateRewardMarker(reward) {
+    const normalized = (reward + 1) / 11;
+    const marker = document.getElementById('reward-marker');
+    marker.style.marginLeft = `${normalized * 100}%`;
+}
+
+function updateActionValues(qValues) {
+    for (let i = 0; i < 4; i++) {
+        document.getElementById(`action-${i}-value`).textContent = qValues[i].toFixed(2);
+    }
+}
+
+// ===================================
+// LABERINTO
+// ===================================
+function drawMaze() {
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (maze[r][c] === 1) fill(50);
+            else if (maze[r][c] === 2) fill('gold');
+            else if (maze[r][c] === 3) fill(200);
+            else fill(255);
+            stroke(220);
+            rect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+    }
+}
+
+function mouseDragged() {
+    if (!isDrawingMode) return;
+    const x = floor(mouseX / CELL_SIZE);
+    const y = floor(mouseY / CELL_SIZE);
+    if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+        if (drawingModeType === 'create' && maze[y][x] === 0) maze[y][x] = 1;
+        else if (drawingModeType === 'erase' && maze[y][x] === 1) maze[y][x] = 0;
+    }
+    draw();
+}
+
+function calculateMazeHash() {
+    let hash = '';
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            hash += maze[r][c];
+        }
+    }
+    return hash;
+}
+
+function updateMazeHash() {
+    mazeHash = calculateMazeHash();
+}
+
+// ===================================
+// AGENTE CON MEMORIA DE TRAYECTORIAS
+// ===================================
+class Agent {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.initialPos = { x, y };
+        this.steps = 0;
+
+        this.learningRate = 0.01;
+        this.gamma = 0.99;
+        this.epsilon = 1.0;
+        this.epsilonMin = 0.7;
+        this.epsilonDecay = 0.998;
+
+        this.replayMemory = [];
+        this.memorySize = 100000;
+        this.batchSize = 64;
+        this.targetUpdateFrequency = 100;
+
+        this.model = this.createModel();
+        this.targetModel = this.createModel();
+        this.updateTargetNetwork();
+        
+        this.lastActions = [];
+        this.bestReward = -Infinity;
+        this.episodeReward = 0;
+        this.consecutiveSuccesses = 0;
+        
+        // MEMORIA DE TRAYECTORIAS EXITOSAS
+        this.successfulPaths = []; 
+        this.currentPath = [];
+        this.usingMemory = false;
+        this.memoryPathIndex = 0;
+        this.currentMemoryPath = null;
+        
+        this.visitedPositions = new Map();
+        this.stuckCounter = 0;
+        this.recentlyVisited = new Set();
+        
+        this.bestSteps = Infinity;
+    }
+
+    createModel() {
+        const model = tf.sequential();
+        model.add(tf.layers.dense({
+            units: 128, inputShape: [4], activation: 'relu', kernelInitializer: 'heNormal'
+        }));
+        model.add(tf.layers.dense({
+            units: 64, activation: 'relu', kernelInitializer: 'heNormal'
+        }));
+        model.add(tf.layers.dense({
+            units: 4, activation: 'linear', kernelInitializer: 'glorotNormal'
+        }));
+        model.compile({ optimizer: tf.train.adam(this.learningRate), loss: 'meanSquaredError' });
+        return model;
+    }
+
+    updateTargetNetwork() {
+        this.targetModel.setWeights(this.model.getWeights());
+    }
+
+    getStateTensor() { 
+        const relX = (COLS - 1 - this.x) / (COLS - 1);
+        const relY = (ROWS - 1 - this.y) / (ROWS - 1);
+        return tf.tensor2d([[this.x / (COLS-1), this.y / (ROWS-1), relX, relY]]);
+    }
+
+    chooseAction(state, isRandom = false) {
+        if (this.successfulPaths.length > 0 && Math.random() < 0.7 && !this.usingMemory) {
+            const bestPath = this.findBestPathForCurrentPosition();
+            if (bestPath) {
+                this.usingMemory = true;
+                this.memoryPathIndex = bestPath.startIndex;
+                this.currentMemoryPath = bestPath.path;
+                console.log("Usando trayectoria memorizada desde posición:", this.x, this.y);
+            }
+        }
+        
+        if (this.usingMemory && this.memoryPathIndex < this.currentMemoryPath.actions.length) {
+            const action = this.currentMemoryPath.actions[this.memoryPathIndex];
+            this.memoryPathIndex++;
+            return action;
+        } else {
+            this.usingMemory = false;
+            this.currentMemoryPath = null;
+        }
+        
+        const currentPosKey = `${this.x},${this.y}`;
+        const visitCount = this.visitedPositions.get(currentPosKey) || 0;
+        
+        let localEpsilon = this.epsilon;
+        if (visitCount > 5) {
+            localEpsilon = Math.min(0.8, localEpsilon + visitCount * 0.1);
+        }
+        
+        if (isRandom || Math.random() < localEpsilon) {
+            const possibleActions = [0, 1, 2, 3];
+            const actionScores = possibleActions.map(action => {
+                const newX = this.x + (action === 3 ? 1 : action === 2 ? -1 : 0);
+                const newY = this.y + (action === 1 ? 1 : action === 0 ? -1 : 0);
+                
+                if (newX < 0 || newX >= COLS || newY < 0 || newY >= ROWS || maze[newY][newX] === 1) {
+                    return -Infinity;
+                }
+                
+                const newPosKey = `${newX},${newY}`;
+                const newVisitCount = this.visitedPositions.get(newPosKey) || 0;
+                return Math.random() * (1 / (newVisitCount + 1));
+            });
+            
+            const maxScore = Math.max(...actionScores);
+            const bestActions = possibleActions.filter((_, i) => actionScores[i] === maxScore);
+            return bestActions[Math.floor(Math.random() * bestActions.length)];
+        }
+        
+        const actionPrediction = this.model.predict(state);
+        return actionPrediction.argMax(1).dataSync()[0];
+    }
+
+    findBestPathForCurrentPosition() {
+        const currentPosKey = `${this.x},${this.y}`;
+        let bestPath = null;
+        let bestScore = -Infinity;
+        
+        for (const path of this.successfulPaths) {
+            const positionIndex = path.positions.findIndex(pos => pos === currentPosKey);
+            
+            if (positionIndex !== -1) {
+                const remainingSteps = path.positions.length - positionIndex;
+                const score = (path.steps - remainingSteps) / path.steps;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPath = {
+                        path: path,
+                        startIndex: positionIndex
+                    };
+                }
+            }
+        }
+        
+        return bestPath;
+    }
+
+    saveSuccessfulPath() {
+        if (this.currentPath.length > 0) {
+            const pathData = {
+                positions: this.currentPath.map(step => `${step.x},${step.y}`),
+                actions: this.currentPath.map(step => step.action),
+                steps: this.steps,
+                reward: this.episodeReward
+            };
+            
+            if (this.steps < this.bestSteps) {
+                this.bestSteps = this.steps;
+            }
+            
+            this.successfulPaths.push(pathData);
+            this.successfulPaths.sort((a, b) => a.steps - b.steps);
+            if (this.successfulPaths.length > 5) {
+                this.successfulPaths.pop();
+            }
+            
+            console.log("Path successfully saved. Steps:", this.steps, "Rewards:", this.episodeReward);
+        }
+    }
+    
+    takeAction(action) {
+        this.currentPath.push({
+            x: this.x,
+            y: this.y,
+            action: action
+        });
+        
+        const oldX = this.x, oldY = this.y;
+        let { x: newX, y: newY } = this;
+        
+        if (action === 0) newY--;
+        else if (action === 1) newY++;
+        else if (action === 2) newX--;
+        else if (action === 3) newX++;
+        
+        this.steps++;
+        this.lastActions.push(action);
+        if (this.lastActions.length > 10) this.lastActions.shift();
+        
+        const currentPosKey = `${this.x},${this.y}`;
+        this.visitedPositions.set(currentPosKey, (this.visitedPositions.get(currentPosKey) || 0) + 1);
+        this.recentlyVisited.add(currentPosKey);
+        
+        if (this.recentlyVisited.size > 20) {
+            const first = this.recentlyVisited.values().next().value;
+            this.recentlyVisited.delete(first);
+        }
+        
+        if (newX < 0 || newX >= COLS || newY < 0 || newY >= ROWS || maze[newY][newX] === 1) {
+            this.episodeReward -= 1.0;
+            this.stuckCounter++;
+            this.usingMemory = false;
+            this.currentMemoryPath = null;
+            return { reward: -1.0, done: false };
+        }
+        
+        const newPosKey = `${newX},${newY}`;
+        if (this.recentlyVisited.has(newPosKey)) {
+            this.stuckCounter += 2;
+        }
+        
+        this.x = newX;
+        this.y = newY;
+        
+        if (maze[oldY][oldX] === 0) maze[oldY][oldX] = 3;
+        
+        if (maze[this.y][this.x] === 2) {
+            this.episodeReward += 10.0;
+            return { reward: 10.0, done: true };
+        }
+        
+        const oldDistance = dist(oldX, oldY, COLS-1, ROWS-1);
+        const newDistance = dist(this.x, this.y, COLS-1, ROWS-1);
+        const maxDistance = dist(0, 0, COLS-1, ROWS-1);
+        
+        let reward = 0.0;
+        if (newDistance < oldDistance) {
+            reward = 0.1 * (1 - newDistance / maxDistance);
+            this.stuckCounter = Math.max(0, this.stuckCounter - 2);
+        } else {
+            reward = -0.05;
+            this.stuckCounter++;
+        }
+        
+        reward -= 0.01;
+        
+        const visitCount = this.visitedPositions.get(newPosKey) || 0;
+        if (visitCount === 0) {
+            reward += 0.05;
+        }
+        
+        this.episodeReward += reward;
+        return { reward, done: false };
+    }
+
+    remember(state, action, reward, nextState, done) {
+        const nextQValues = this.targetModel.predict(nextState);
+        const maxNextQ = nextQValues.max().dataSync()[0];
+        const target = reward + (done ? 0 : this.gamma * maxNextQ);
+        
+        const currentQValues = this.model.predict(state);
+        const currentQ = currentQValues.gather([action], 1).dataSync()[0];
+        const tdError = Math.abs(target - currentQ);
+        
+        if (this.replayMemory.length > this.memorySize) {
+            this.replayMemory.shift();
+        }
+        
+        this.replayMemory.push({
+            state, action, reward, nextState, done,
+            priority: tdError + 1e-5
+        });
+    }
+
+    async learn(state, action, reward, nextState, done) {
+        this.remember(state, action, reward, nextState, done);
+        
+        if (this.replayMemory.length < this.batchSize) return;
+        
+        const priorities = this.replayMemory.map(exp => exp.priority);
+        const sumPriorities = priorities.reduce((a, b) => a + b, 0);
+        const probabilities = priorities.map(p => p / sumPriorities);
+        
+        const batch = [];
+        const indices = [];
+        for (let i = 0; i < this.batchSize; i++) {
+            let r = Math.random();
+            let index = 0;
+            while (r > 0 && index < probabilities.length - 1) {
+                r -= probabilities[index];
+                index++;
+            }
+            indices.push(index);
+            batch.push(this.replayMemory[index]);
+        }
+        
+        const states = batch.map(exp => exp.state);
+        const actions = batch.map(exp => exp.action);
+        const rewards = batch.map(exp => exp.reward);
+        const nextStates = batch.map(exp => exp.nextState);
+        const dones = batch.map(exp => exp.done);
+        
+        const nextActions = this.model.predict(tf.concat(nextStates)).argMax(1).dataSync();
+        const nextQValues = this.targetModel.predict(tf.concat(nextStates));
+        
+        const targets = [];
+        const newPriorities = [];
+        
+        for (let i = 0; i < batch.length; i++) {
+            const nextQValue = nextQValues.gather([nextActions[i]], 1).dataSync()[0];
+            let target = rewards[i];
+            if (!dones[i]) {
+                target += this.gamma * nextQValue;
+            }
+            targets.push(target);
+            
+            const currentQValues = this.model.predict(states[i]);
+            const currentQ = currentQValues.gather([actions[i]], 1).dataSync()[0];
+            const tdError = Math.abs(target - currentQ);
+            newPriorities.push(tdError + 1e-5);
+        }
+        
+        for (let i = 0; i < indices.length; i++) {
+            this.replayMemory[indices[i]].priority = newPriorities[i];
+        }
+        
+        tf.tidy(() => {
+            const stateTensor = tf.concat(states);
+            const targetTensor = tf.tensor1d(targets);
+            
+            const optimizer = tf.train.adam(this.learningRate);
+            
+            optimizer.minimize(() => {
+                const predictions = this.model.predict(stateTensor);
+                const actionMasks = tf.oneHot(actions, 4);
+                const maskedPredictions = predictions.mul(actionMasks).sum(1);
+                const loss = tf.losses.meanSquaredError(targetTensor, maskedPredictions);
+                return loss;
+            });
+        });
+        
+        if (totalSteps % this.targetUpdateFrequency === 0) {
+            this.updateTargetNetwork();
+        }
+    }
+
+    reset() {
+        this.epsilon = Math.max(this.epsilonMin, this.epsilon * this.epsilonDecay);
+        
+        if (this.episodeReward > this.bestReward) {
+            this.bestReward = this.episodeReward;
+        }
+        
+        this.x = this.initialPos.x;
+        this.y = this.initialPos.y;
+        this.steps = 0;
+        this.lastActions = [];
+        this.episodeReward = 0;
+        this.stuckCounter = 0;
+        this.usingMemory = false;
+        this.currentMemoryPath = null;
+        this.currentPath = [];
+        
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (maze[r][c] === 3) maze[r][c] = 0;
+            }
+        }
+    }
+    
+    resetLearning() {
+        this.replayMemory = [];
+        this.epsilon = 1.0;
+        this.consecutiveSuccesses = 0;
+        this.bestReward = -Infinity;
+        this.bestSteps = Infinity;
+        this.visitedPositions.clear();
+        this.recentlyVisited.clear();
+        this.stuckCounter = 0;
+        this.successfulPaths = [];
+        this.usingMemory = false;
+        console.log("Learning reset for environment changes");
+    }
+    
+    getExplorationState() {
+        if (this.epsilon > 0.7) return "High";
+        if (this.epsilon > 0.4) return "Medium";
+        if (this.epsilon > 0.1) return "Low";
+        return "Very Low";
+    }
+
+    draw() {
+        const centerX = this.x * CELL_SIZE + CELL_SIZE / 2;
+        const centerY = this.y * CELL_SIZE + CELL_SIZE / 2;
+        textAlign(CENTER, CENTER); 
+        textSize(CELL_SIZE * 0.8); 
+        
+        if (this.usingMemory) {
+            fill(255, 165, 0); 
+        } else {
+            fill(0);
+        }
+        
+        text('🐭', centerX, centerY);
+        
+        if (this.lastActions.length > 0) {
+            const lastAction = this.lastActions[this.lastActions.length - 1];
+            fill(255, 0, 0);
+            noStroke();
+            
+            const arrowSize = CELL_SIZE / 4;
+            if (lastAction === 0) {
+                triangle(
+                    centerX - arrowSize, centerY + arrowSize,
+                    centerX + arrowSize, centerY + arrowSize,
+                    centerX, centerY - arrowSize
+                );
+            } else if (lastAction === 1) {
+                triangle(
+                    centerX - arrowSize, centerY - arrowSize,
+                    centerX + arrowSize, centerY - arrowSize,
+                    centerX, centerY + arrowSize
+                );
+            } else if (lastAction === 2) {
+                triangle(
+                    centerX + arrowSize, centerY - arrowSize,
+                    centerX + arrowSize, centerY + arrowSize,
+                    centerX - arrowSize, centerY
+                );
+            } else if (lastAction === 3) {
+                triangle(
+                    centerX - arrowSize, centerY - arrowSize,
+                    centerX - arrowSize, centerY + arrowSize,
+                    centerX + arrowSize, centerY
+                );
+            }
+        }
+    }
+}
+
+// ===================================
+// VISUALIZADOR RED NEURONAL
+// ===================================
+class NNVisualizer {
+    constructor(parent) {
+        this.parent = parent;
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = 300; 
+        this.canvas.height = 150;
+        this.parent.appendChild(this.canvas);
+        this.ctx = this.canvas.getContext('2d');
+        this.layers = [4, 128, 64, 4];
+        this.neuronPositions = this.calculateNeuronPositions();
+    }
+    
+    calculateNeuronPositions() {
+        const positions = []; 
+        const layerSpacing = this.canvas.width / (this.layers.length + 1);
+        
+        for (let i = 0; i < this.layers.length; i++) {
+            const layerPositions = []; 
+            const neuronSpacing = this.canvas.height / (this.layers[i] + 1);
+            
+            for (let j = 0; j < this.layers[i]; j++) {
+                layerPositions.push({ 
+                    x: layerSpacing * (i + 1), 
+                    y: neuronSpacing * (j + 1) 
+                });
+            }
+            positions.push(layerPositions);
+        }
+        return positions;
+    }
+    
+    update(qValues, chosenAction) {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        this.ctx.lineWidth = 0.5;
+        
+        for (let i = 0; i < this.neuronPositions.length - 1; i++) {
+            for (const n1 of this.neuronPositions[i]) {
+                for (const n2 of this.neuronPositions[i + 1]) {
+                    this.ctx.beginPath(); 
+                    this.ctx.moveTo(n1.x, n1.y); 
+                    this.ctx.lineTo(n2.x, n2.y); 
+                    this.ctx.stroke();
+                }
+            }
+        }
+        
+        for (let i = 0; i < this.neuronPositions.length; i++) {
+            for (let j = 0; j < this.neuronPositions[i].length; j++) {
+                const pos = this.neuronPositions[i][j]; 
+                let color = 'rgba(255, 255, 255, 0.5)'; 
+                let radius = 4;
+                
+                if (i === this.layers.length - 1) {
+                    const qValue = qValues[j]; 
+                    const intensity = 1 / (1 + Math.exp(-qValue));
+                    color = `rgba(100, 255, 100, ${intensity})`; 
+                    
+                    if (j === chosenAction) { 
+                        color = 'gold'; 
+                        radius = 6; 
+                    }
+                } else if (i === 0) {
+                    color = 'rgba(100, 150, 255, 0.7)';
+                } else {
+                    color = 'rgba(200, 200, 200, 0.7)';
+                }
+                
+                this.ctx.fillStyle = color; 
+                this.ctx.beginPath(); 
+                this.ctx.arc(pos.x, pos.y, radius, 0, 2 * Math.PI); 
+                this.ctx.fill();
+            }
+        }
+    }
+}
+
+// ===================================
+// UI Y CONTROLES
+// ===================================
+function setupUI() {
+    startButton = select('#start-btn'); 
+    pauseButton = select('#pause-btn'); 
+    resetButton = select('#reset-btn');
+    designModeButton = select('#design-mode-btn'); 
+    createWallButton = select('#create-wall-btn'); 
+    eraseWallButton = select('#erase-wall-btn'); 
+    designModeControls = select('#design-mode-controls');
+    modeSelector = select('#control-mode'); 
+    stepsText = select('#steps-text'); 
+    bestTimeText = select('#best-time-text');
+    episodesText = select('#episodes-text');
+    totalStepsText = select('#total-steps-text');
+    successStreakText = select('#success-streak');
+    explorationStateText = select('#exploration-state');
+    usingMemoryText = select('#using-memory');
+    savedPathsText = select('#saved-paths');
+    leftPanel = select('#left-panel'); 
+    uiContainer = select('#ui-container');
+
+    startButton.mousePressed(() => { 
+        isDrawingMode = false; 
+        isPaused = false; 
+        loop(); 
+        designModeControls.addClass('hidden'); 
+        pauseButton.html('Pause');
+    });
+    
+    pauseButton.mousePressed(() => { 
+        if (!isDrawingMode) { 
+            isPaused = !isPaused; 
+            pauseButton.html(isPaused ? 'Resume' : 'Pause'); 
+        } 
+    });
+    
+    resetButton.mousePressed(() => { 
+        agent = new Agent(0, 0); 
+        episodeSteps = []
+        bestTime = Infinity; 
+        completedEpisodes = 0;
+        totalSteps = 0;
+        successStreak = 0;
+        if(chart){
+            chart.data.labels=[];
+            chart.data.datasets[0].data=[];
+            chart.update();
+        } 
+        updateMetrics(0); 
+        console.log("Agente reseteado."); 
+    });
+    
+    modeSelector.changed(() => { 
+        controlMode = modeSelector.value(); 
+    });
+    
+    designModeButton.mousePressed(() => { 
+        isDrawingMode = !isDrawingMode; 
+        if (isDrawingMode) { 
+            noLoop(); 
+            isPaused = true; 
+            designModeButton.html('Come back to simulation'); 
+            designModeControls.removeClass('hidden'); 
+        } else { 
+            // CORRECCIÓN: Comprobar si el laberinto ha cambiado al salir del modo diseño.
+            const currentHash = calculateMazeHash();
+            if (currentHash !== mazeHash) {
+                console.log("Maze modified, restarting learning...");
+                mazeHash = currentHash;
+                agent.resetLearning();
+            }
+            loop(); 
+            isPaused = false; 
+            designModeButton.html('Design mode'); 
+            designModeControls.addClass('hidden'); 
+        } 
+    });
+    
+    createWallButton.mousePressed(() => { 
+        drawingModeType = 'create'; 
+        createWallButton.addClass('active'); 
+        eraseWallButton.removeClass('active'); 
+    });
+    
+    eraseWallButton.mousePressed(() => { 
+        drawingModeType = 'erase'; 
+        eraseWallButton.addClass('active'); 
+        createWallButton.removeClass('active'); 
+    });
+
+    const ctx = document.getElementById('metrics-chart').getContext('2d');
+    chart = new Chart(ctx, { 
+        type: 'line', 
+        data: { 
+            labels: [], 
+            datasets: [{
+                label: 'Steps by episode', 
+                data: [], 
+                borderColor: 'rgba(65, 105, 225, 1)', 
+                borderWidth: 1.5, 
+                fill: false, 
+                tension: 0.1, 
+                pointRadius: 2.0 
+            }] 
+        }, 
+        options: { 
+            scales: { 
+                y: { 
+                    beginAtZero: true, 
+                    title: { 
+                        display: true, 
+                        text: 'Steps' 
+                    } 
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Episodes'
+                    }
+                }
+            }, 
+            animation: { 
+                duration: 200 
+            } 
+        } 
+    });
+}
+
+function updateMetrics(steps) {
+    if (steps > 0) {
+        episodeSteps.push(steps);
+        if (steps < bestTime) bestTime = steps;
+        chart.data.labels.push(episodeSteps.length); 
+        chart.data.datasets[0].data.push(steps); 
+        chart.update();
+    }
+    stepsText.html(agent.steps);
+    bestTimeText.html(bestTime === Infinity ? 'N/A' : bestTime);
+}
+
+function toggleTutorial() {
+    const tutorial = document.getElementById('tutorial-content');
+    tutorial.style.display = tutorial.style.display === 'block' ? 'none' : 'block';
+}
+
+function dist(x1, y1, x2, y2) {
+    return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+}
+</script>
+</body>
+</html>
